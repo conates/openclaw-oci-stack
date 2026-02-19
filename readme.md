@@ -11,7 +11,7 @@ El objetivo es replicar un entorno de IA robusto para administración, análisis
 Una VM Linux en OCI configurada para:
 1.  Alojar **OpenClaw**, el asistente de IA.
 2.  Ejecutar **Ollama** con el modelo `mistral` para análisis de lenguaje local y generación de embeddings.
-3.  Utilizar **SpaCy** para **procesamiento de lenguaje natural (PLN)** avanzado.
+3.  Utilizar **SpaCy** para **procesamiento de lenguaje natural (PLN)** avanzado (instalado para futuras mejoras, pero no activamente integrado en el flujo de chunking del RAG actual).
 4.  Gestionar datos estructurados con **SQLite**.
 5.  Implementar una base de datos vectorial con **ChromaDB** para búsqueda semántica.
 6.  Soportar un **Sistema RAG híbrido** para consultas complejas.
@@ -232,10 +232,10 @@ Este apartado detalla la configuración del sistema de Retrieval Augmented Gener
     *   Servicio activo: `systemctl status ollama.service`
     *   Modelo cargado: `ollama list`
     *   Probar inferencia local: `ollama run mistral "Hola, ¿cómo estás?"`
-*   **SpaCy:**
+*   **SpaCy:** Instalado en el entorno virtual `spacy_venv` para futuras mejoras en el Procesamiento de Lenguaje Natural (PLN), aunque no es un componente activo y directo del flujo de chunking/embedding del RAG en su implementación actual.
     *   Entorno virtual existe: `ls -F spacy_venv/`
     *   Modelo cargado (ejemplo Python):
-        ```python
+        ```bash
         source spacy_venv/bin/activate
         python3 -c "import spacy; nlp = spacy.load('es_core_news_sm'); doc = nlp('El sol brilla en el cielo.'); for ent in doc.ents: print(ent.text, ent.label_)"
         deactivate
