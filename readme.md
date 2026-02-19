@@ -1,8 +1,8 @@
 # 🚀 Manual de Replicación: OpenClaw con IA Potenciada en OCI
 
-Este manual detalla la instalación paso a paso de **OpenClaw** como su asistente central, potenciado con un modelo de lenguaje local **Ollama (Mistral)** y capacidades de Procesamiento de Lenguaje Natural (PLN) con **SpaCy**, todo desplegado de forma segura en una máquina virtual de **Oracle Cloud Infrastructure (OCI)**.
+Este manual detalla la instalación paso a paso de **OpenClaw** como su asistente central, potenciado con un modelo de lenguaje local **Ollama (Mistral)**, capacidades de Procesamiento de Lenguaje Natural (PLN) con **SpaCy**, y un robusto sistema **RAG (Retrieval Augmented Generation) híbrido** con **SQLite y ChromaDB**, todo desplegado de forma segura en una máquina virtual de **Oracle Cloud Infrastructure (OCI)**.
 
-El objetivo es replicar un entorno de IA robusto para administración, análisis y ciberseguridad controlada.
+El objetivo es replicar un entorno de IA robusto para administración, análisis y ciberseguridad controlada, específicamente adaptado para la gestión de información de PortalCentro Mulchén.
 
 ---
 
@@ -10,9 +10,12 @@ El objetivo es replicar un entorno de IA robusto para administración, análisis
 
 Una VM Linux en OCI configurada para:
 1.  Alojar **OpenClaw**, el asistente de IA.
-2.  Ejecutar **Ollama** con el modelo `mistral` para análisis de lenguaje local.
+2.  Ejecutar **Ollama** con el modelo `mistral` para análisis de lenguaje local y generación de embeddings.
 3.  Utilizar **SpaCy** para **procesamiento de lenguaje natural (PLN)** avanzado.
-4.  Garantizar **acceso seguro y privado** a través de **Tailscale**.
+4.  Gestionar datos estructurados con **SQLite**.
+5.  Implementar una base de datos vectorial con **ChromaDB** para búsqueda semántica.
+6.  Soportar un **Sistema RAG híbrido** para consultas complejas.
+7.  Garantizar **acceso seguro y privado** a través de **Tailscale**.
 
 ---
 
@@ -20,9 +23,8 @@ Una VM Linux en OCI configurada para:
 
 *   Una **VM Linux (Ubuntu 22.04 LTS o superior, arquitectura ARM64)** en Oracle Cloud Infrastructure (idealmente, la capa "Always Free" con 4 OCPUs y 24 GB de RAM).
 *   Acceso SSH a la VM con un usuario `sudo` (ej. `ubuntu`).
-*   Dominio o subdominio configurado si desea acceso web público con Caddy (opcional, no incluido en este manual para mantener el foco en Tailscale).
 *   Cuenta de Tailscale activa.
-*   Conocimiento básico de terminal Linux.
+*   Conocimiento básico de terminal Linux y `git`.
 
 ---
 
@@ -37,9 +39,9 @@ Una VM Linux en OCI configurada para:
 
 2.  **Instalar Dependencias Básicas (si no están presentes):**
     ```bash
-    sudo apt install -y build-essential python3 python3-pip make g++ curl
+    sudo apt install -y build-essential python3 python3-pip make g++ curl sqlite3
     ```
-    *(Nota: `python3-pip` es importante para la gestión de paquetes Python.)*
+    *(Nota: `python3-pip` y `sqlite3` son importantes para la gestión de paquetes Python y la base de datos local.)*
 
 3.  **Configurar Firewall (UFW):**
     Establece reglas de seguridad estrictas, permitiendo solo SSH y el puerto de Tailscale.
@@ -160,69 +162,72 @@ Una VM Linux en OCI configurada para:
     ```
     *   **Verificación:** `ollama list` debería mostrar `mistral:7b-instruct-v0.2-q4_K_M`.
 
-### **Fase 6: Instalación de Qdrant (Base de Datos Vectorial)**
+### **Fase 6: Configuración del Sistema RAG (SQLite y ChromaDB)**
 
-1.  **Crear Directorio de Datos:**
+Este apartado detalla la configuración del sistema de Retrieval Augmented Generation (RAG) que permite al asistente de IA consultar una base de conocimiento híbrida (SQLite para datos estructurados y ChromaDB para búsqueda semántica).
+
+1.  **Clonar el Repositorio de PortalCentro (si aplica):**
+    Asegúrese de que el repositorio de PortalCentro esté clonado en su workspace en la ruta `memory/portalcentro/`.
     ```bash
-    mkdir -p qdrant_data
+    cd /home/ubuntu/.openclaw/workspace/
+    git clone git@github.com:PortalCentroMulchen/crm-openclaw-hxh.git memory/portalcentro
+    # Asegúrese de que su clave SSH esté configurada en GitHub para poder clonar.
     ```
 
-2.  **Crear `docker-compose.yml` para Qdrant:**
+2.  **Crear Entorno Virtual Python y Activar:**
     ```bash
-    cat <<EOL > docker-compose-qdrant.yml
-    version: '3.8'
-    services:
-      qdrant:
-        image: qdrant/qdrant
-        restart: always
-        ports:
-          - "6333:6333" # REST API
-          - "6334:6334" # gRPC API
-        volumes:
-          - ./qdrant_data:/qdrant/data
-        environment:
-          - QDRANT__SERVICE__GRPC_PORT=6334
-          - QDRANT__SERVICE__HTTP_PORT=6333
-    EOL
-    ```
-
-3.  **Iniciar Qdrant con Docker Compose:**
-    ```bash
-    docker compose -f docker-compose-qdrant.yml up -d
-    ```
-    *   **Verificación:** `docker ps | grep qdrant` (debería mostrar el contenedor "Up").
-
-### **Fase 7: Instalación de SpaCy (Procesamiento de Lenguaje Natural)**
-
-1.  **Instalar `python3-venv` (si no está):**
-    ```bash
-    sudo apt install -y python3-venv
-    ```
-
-2.  **Crear Entorno Virtual Python:**
-    ```bash
+    cd /home/ubuntu/.openclaw/workspace/
     python3 -m venv spacy_venv
+    source spacy_venv/bin/activate
     ```
 
-3.  **Instalar SpaCy en el Entorno Virtual:**
+3.  **Instalar Dependencias de Python:**
     ```bash
-    source spacy_venv/bin/activate && python3 -m pip install spacy && deactivate
+    pip install -r requirements.txt
+    # El archivo requirements.txt debe contener:
+    # ollama
+    # chromadb
+    # spacy
+    # python-dotenv
+    ```
+    *(Si `requirements.txt` no existe, créelo manualmente con las dependencias mencionadas o ejecute `pip freeze > requirements.txt` después de instalar cada una.)*
+
+4.  **Descargar Modelo de Lenguaje SpaCy (Español):**
+    ```bash
+    python3 -m spacy download es_core_news_sm
     ```
 
-4.  **Descargar Modelo de Lenguaje para SpaCy (Español):**
+5.  **Inicializar y Poblar la Base de Datos SQLite:**
+    El script `portalcentro_db_manager.py` gestiona la base de datos `portalcentro.db`, sincronizando datos estructurados desde los archivos Markdown. Ejecútelo para inicializar la base de datos.
     ```bash
-    source spacy_venv/bin/activate && python3 -m spacy download es_core_news_sm && deactivate
+    python3 portalcentro_db_manager.py
     ```
-    *   **Verificación:** Puede activar el venv y ejecutar `python3 -c "import spacy; nlp = spacy.load('es_core_news_sm'); doc = nlp('Hola mundo'); print(doc.text)"`
+
+6.  **Indexar la Memoria en ChromaDB:**
+    El script `index_portalcentro_memory.py` procesa los archivos Markdown (`.md`) de la memoria de PortalCentro, los divide en `chunks`, genera embeddings utilizando Ollama y los indexa en ChromaDB. **Debe ejecutarse cada vez que haya cambios significativos en los archivos Markdown.**
+    ```bash
+    python3 index_portalcentro_memory.py
+    ```
+
+7.  **Desactivar Entorno Virtual:**
+    ```bash
+    deactivate
+    ```
+
+8.  **Configurar Automatización Diaria (Opcional, pero Recomendado):**
+    Cree un script `sync_and_index_portalcentro.sh` (ubicado en la raíz de su workspace) y configure trabajos `cron` para ejecutarlo automáticamente. Esto mantendrá su sistema RAG siempre actualizado.
+    *   **Contenido de `sync_and_index_portalcentro.sh`:** (Ver archivo `sync_and_index_portalcentro.sh` en este repositorio para el contenido exacto)
+    *   **Hacer el script ejecutable:**
+        ```bash
+        chmod +x sync_and_index_portalcentro.sh
+        ```
+    *   **Añadir trabajos `cron`:** Utilice la herramienta `cron` de OpenClaw (o crontab) para programar la ejecución del script en los horarios deseados (ej. 7 AM, 1 PM, 5 PM, 9 PM). Cada trabajo debe usar una `sessionTarget: isolated` y un `payload.kind: agentTurn` con un `message: exec ./sync_and_index_portalcentro.sh`.
 
 ---
 
 ## ✅ Verificación Final de Componentes
 
 *   **OpenClaw:** Acceder vía `https://<nombre_vm>.tailnetID.ts.net/` (su URL de Tailscale para OpenClaw).
-*   **Qdrant:**
-    *   Contenedor activo: `docker ps | grep qdrant`
-    *   Accesible localmente: `curl http://127.0.0.1:6333/collections` (debería retornar un JSON).
 *   **Ollama con Mistral:**
     *   Servicio activo: `systemctl status ollama.service`
     *   Modelo cargado: `ollama list`
@@ -231,11 +236,18 @@ Una VM Linux en OCI configurada para:
     *   Entorno virtual existe: `ls -F spacy_venv/`
     *   Modelo cargado (ejemplo Python):
         ```python
-        import spacy
-        nlp = spacy.load("es_core_news_sm")
-        doc = nlp("El sol brilla en el cielo.")
-        for ent in doc.ents:
-            print(ent.text, ent.label_)
+        source spacy_venv/bin/activate
+        python3 -c "import spacy; nlp = spacy.load('es_core_news_sm'); doc = nlp('El sol brilla en el cielo.'); for ent in doc.ents: print(ent.text, ent.label_)"
+        deactivate
+        ```
+*   **Sistema RAG (SQLite & ChromaDB):**
+    *   Base de datos SQLite: `ls portalcentro.db` (debería existir en el workspace).
+    *   ChromaDB datos: `ls -F chroma_db/` (debería mostrar archivos de la base de datos).
+    *   Probar consultas RAG (ejemplo Python):
+        ```bash
+        source spacy_venv/bin/activate
+        python3 -c "from query_portalcentro_rag import query_portalcentro_rag; print(query_portalcentro_rag('¿Cuál es la superficie del local 5?'))"
+        deactivate
         ```
 
 ---
@@ -243,9 +255,9 @@ Una VM Linux en OCI configurada para:
 ## 📝 Notas Post-Instalación
 
 *   **Uso de Recursos:** Esta configuración utiliza la mayoría de los recursos de la capa "Always Free" de OCI. Monitoree su consumo.
-*   **Actualizaciones:** Mantenga el sistema operativo (`sudo apt update && sudo apt upgrade -y`), Docker (`docker compose pull` para Qdrant) y Ollama (`ollama pull <modelo>`) actualizados.
-*   **Tailscale MagicDNS:** Si experimenta problemas de resolución de nombres *dentro de la VM* para las URLs de Tailscale, podría ser necesario investigar más a fondo la interacción con `systemd-resolved` o ajustar `resolv.conf`, aunque el acceso externo desde su cliente Tailscale debería funcionar.
+*   **Actualizaciones:** Mantenga el sistema operativo (`sudo apt update && sudo apt upgrade -y`), Docker (`docker compose pull` para cualquier servicio futuro) y Ollama (`ollama pull <modelo>`) actualizados.
+*   **Troubleshooting Git SSH:** Si experimenta problemas al clonar el repositorio de PortalCentro vía SSH, asegúrese de que su clave SSH pública esté añadida a su cuenta de GitHub y que `ssh-agent` esté configurado en su VM.
 
 ---
 
-Este manual está diseñado para ser un recurso completo para replicar su entorno de IA.
+Este manual es un recurso completo para replicar y mantener su entorno de IA.
